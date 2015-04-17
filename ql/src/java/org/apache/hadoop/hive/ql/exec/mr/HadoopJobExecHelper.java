@@ -67,7 +67,7 @@ public class HadoopJobExecHelper {
 
   static final private Log LOG = LogFactory.getLog(HadoopJobExecHelper.class.getName());
 
-  protected transient JobConf job;
+  protected transient final JobConf job;
   protected Task<? extends Serializable> task;
 
   protected transient int mapProgress = -1;
@@ -285,7 +285,7 @@ public class HadoopJobExecHelper {
         initOutputPrinted = true;
       }
 
-      RunningJob newRj = jc.getJob(rj.getID());
+      RunningJob newRj = th.updateRunningJob();
       if (newRj == null) {
         // under exceptional load, hadoop may not be able to look up status
         // of finished jobs (because it has purged them from memory). From
@@ -293,7 +293,6 @@ public class HadoopJobExecHelper {
         // So raise a meaningful exception
         throw new IOException("Could not find status of job:" + rj.getID());
       } else {
-        th.setRunningJob(newRj);
         rj = newRj;
       }
 
@@ -449,6 +448,7 @@ public class HadoopJobExecHelper {
    * from execute and Driver can split execute into start, monitorProgess and postProcess.
    */
   private static class ExecDriverTaskHandle extends TaskHandle {
+    private final JobConf job;
     JobClient jc;
     RunningJob rj;
     HiveTxnManager txnMgr;
@@ -465,14 +465,21 @@ public class HadoopJobExecHelper {
       return txnMgr;
     }
 
-    public ExecDriverTaskHandle(JobClient jc, RunningJob rj, HiveTxnManager txnMgr) {
+    public ExecDriverTaskHandle(JobConf job, JobClient jc, RunningJob rj, HiveTxnManager txnMgr) {
+      this.job = job;
       this.jc = jc;
       this.rj = rj;
       this.txnMgr = txnMgr;
     }
 
-    public void setRunningJob(RunningJob job) {
-      rj = job;
+    RunningJob updateRunningJob() throws IOException {
+      rj = jc.getJob(rj.getID());
+      if (rj == null) {
+          // try with new JobClient to get current data MAPREDUCE-6312
+          jc = new JobClient(job);
+          rj = jc.getJob(rj.getID());
+      }
+      return rj;
     }
 
     @Override
@@ -542,7 +549,7 @@ public class HadoopJobExecHelper {
 
     runningJobs.add(rj);
 
-    ExecDriverTaskHandle th = new ExecDriverTaskHandle(jc, rj, txnMgr);
+    ExecDriverTaskHandle th = new ExecDriverTaskHandle(job, jc, rj, txnMgr);
     jobInfo(rj);
     MapRedStats mapRedStats = progress(th);
 
