@@ -473,11 +473,12 @@ public class HadoopJobExecHelper {
     }
 
     RunningJob updateRunningJob() throws IOException {
-      rj = jc.getJob(rj.getID());
+      JobID jobId = rj != null ? rj.getID() : null;
+      rj = jc.getJob(jobId);
       if (rj == null) {
           // try with new JobClient to get current data MAPREDUCE-6312
           jc = new JobClient(job);
-          rj = jc.getJob(rj.getID());
+          rj = jc.getJob(jobId);
       }
       return rj;
     }
